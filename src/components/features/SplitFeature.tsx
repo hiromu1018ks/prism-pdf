@@ -3,9 +3,11 @@ import { FileUpload } from "../ui/FileUpload"
 import { getPDFPageCount, renderPageToDataURL } from '../../lib/pdf-render'
 import { PDFDocument } from 'pdf-lib'
 import JSZip from 'jszip'
-import { Loader2, Download, Check } from 'lucide-react'
+import { Loader2, Download, Check, HardDrive } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { toast } from 'sonner'
+import { WorkspaceFilePicker } from '../workspace/WorkspaceFilePicker'
+import { saveFileToWorkspace } from '../../lib/storage'
 
 export function SplitFeature() {
     const [file, setFile] = useState<File | null>(null)
@@ -14,6 +16,7 @@ export function SplitFeature() {
     const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set())
     const [isLoading, setIsLoading] = useState(false)
     const [isProcessing, setIsProcessing] = useState(false)
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
 
     const handleUpload = async (files: File[]) => {
         if (files.length === 0) return
@@ -52,7 +55,7 @@ export function SplitFeature() {
         setSelectedPages(newSelected)
     }
 
-    const handleExtractSelected = async () => {
+    const handleExtractSelected = async (saveToWorkspace = false) => {
         if (!file || selectedPages.size === 0) return
         setIsProcessing(true)
         try {
@@ -60,14 +63,19 @@ export function SplitFeature() {
             const pdfDoc = await PDFDocument.load(fileBuffer)
             const newPdf = await PDFDocument.create()
 
-            const sortedPages = Array.from(selectedPages).sort((a, b) => a - b)
-
-            const copiedPages = await newPdf.copyPages(pdfDoc, sortedPages)
+            const pages = Array.from(selectedPages).sort((a, b) => a - b)
+            const copiedPages = await newPdf.copyPages(pdfDoc, pages)
             copiedPages.forEach(page => newPdf.addPage(page))
 
             const pdfBytes = await newPdf.save()
-            downloadBlob(pdfBytes, 'extracted.pdf', 'application/pdf')
-            toast.success('ページが正常に抽出されました！')
+
+            if (saveToWorkspace) {
+                await saveFileToWorkspace(pdfBytes, 'extracted.pdf')
+                toast.success('ワークスペースに保存しました')
+            } else {
+                downloadBlob(pdfBytes, 'extracted.pdf', 'application/pdf')
+                toast.success('ページが正常に抽出されました！')
+            }
         } catch (error) {
             console.error(error)
             toast.error('ページの抽出に失敗しました')
@@ -76,7 +84,7 @@ export function SplitFeature() {
         }
     }
 
-    const handleSplitAll = async () => {
+    const handleSplitAll = async (saveToWorkspace = false) => {
         if (!file) return
         setIsProcessing(true)
         try {
@@ -89,12 +97,18 @@ export function SplitFeature() {
                 const [copiedPage] = await newPdf.copyPages(pdfDoc, [i])
                 newPdf.addPage(copiedPage)
                 const pdfBytes = await newPdf.save()
-                zip.file(`page-${i + 1}.pdf`, pdfBytes)
+                zip.file(`page - ${i + 1}.pdf`, pdfBytes)
             }
 
             const content = await zip.generateAsync({ type: 'blob' })
-            downloadBlob(content, 'split-pages.zip', 'application/zip')
-            toast.success('全ページが正常に分割されました！')
+
+            if (saveToWorkspace) {
+                await saveFileToWorkspace(content, 'split-pages.zip')
+                toast.success('ワークスペースに保存しました')
+            } else {
+                downloadBlob(content, 'split-pages.zip', 'application/zip')
+                toast.success('全ページが正常に分割されました！')
+            }
         } catch (error) {
             console.error(error)
             toast.error('PDFの分割に失敗しました')
@@ -125,7 +139,23 @@ export function SplitFeature() {
             </div>
 
             {!file ? (
-                <FileUpload onUpload={handleUpload} />
+                <div className="space-y-4">
+                    <FileUpload onUpload={handleUpload} />
+                    <div className="flex justify-center">
+                        <button
+                            onClick={() => setIsPickerOpen(true)}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                            <HardDrive className="w-4 h-4" />
+                            ワークスペースから追加
+                        </button>
+                    </div>
+                    <WorkspaceFilePicker
+                        isOpen={isPickerOpen}
+                        onClose={() => setIsPickerOpen(false)}
+                        onFileSelect={(file) => handleUpload([file])}
+                    />
+                </div>
             ) : (
                 <div className="space-y-6">
                     <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -167,7 +197,7 @@ export function SplitFeature() {
                                             : "border-gray-200 dark:border-gray-700 hover:border-blue-300"
                                     )}
                                 >
-                                    <img src={src} alt={`Page ${index + 1}`} className="w-full h-full object-cover" />
+                                    <img src={src} alt={`Page ${index + 1} `} className="w-full h-full object-cover" />
                                     <div className={cn(
                                         "absolute inset-0 flex items-center justify-center transition-colors",
                                         selectedPages.has(index) ? "bg-blue-500/20" : "group-hover:bg-black/5"
@@ -191,14 +221,39 @@ export function SplitFeature() {
 
                     <div className="flex justify-end gap-4 pt-4 sticky bottom-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-lg">
                         <button
-                            onClick={handleSplitAll}
+                            onClick={() => handleSplitAll(true)} // Modified to save to workspace
+                            disabled={isProcessing}
+                            className="flex items-center gap-2 px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg font-medium transition-colors"
+                        >
+                            <HardDrive className="w-4 h-4" />
+                            全ページを保存 (ZIP)
+                        </button>
+                        <button
+                            onClick={() => handleSplitAll(false)} // Added for direct download
                             disabled={isProcessing}
                             className="px-4 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg font-medium transition-colors"
                         >
-                            全ページを分割 (ZIP)
+                            全ページをDL (ZIP)
                         </button>
                         <button
-                            onClick={handleExtractSelected}
+                            onClick={() => handleExtractSelected(true)} // Added for saving selected to workspace
+                            disabled={isProcessing || selectedPages.size === 0}
+                            className={cn(
+                                "flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-white transition-all",
+                                isProcessing || selectedPages.size === 0
+                                    ? "bg-gray-400 cursor-not-allowed"
+                                    : "bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-blue-500/30"
+                            )}
+                        >
+                            {isProcessing ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <HardDrive className="w-4 h-4" />
+                            )}
+                            選択したページを保存 ({selectedPages.size})
+                        </button>
+                        <button
+                            onClick={() => handleExtractSelected(false)} // Modified for direct download
                             disabled={isProcessing || selectedPages.size === 0}
                             className={cn(
                                 "flex items-center gap-2 px-6 py-2 rounded-lg font-medium text-white transition-all",

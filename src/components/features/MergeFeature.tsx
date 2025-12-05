@@ -4,9 +4,11 @@ import { mergePDFs } from '../../lib/pdf-utils'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, X, FileText, Download, Loader2 } from 'lucide-react'
+import { GripVertical, X, FileText, Download, Loader2, HardDrive } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { toast } from 'sonner'
+import { WorkspaceFilePicker } from '../workspace/WorkspaceFilePicker'
+import { saveFileToWorkspace } from '../../lib/storage'
 
 interface SortableFileItemProps {
     id: string
@@ -62,9 +64,12 @@ function SortableFileItem({ id, file, onRemove }: SortableFileItemProps) {
     )
 }
 
+type PDFFile = { id: string; file: File };
+
 export function MergeFeature() {
-    const [files, setFiles] = useState<{ id: string; file: File }[]>([])
+    const [files, setFiles] = useState<PDFFile[]>([])
     const [isMerging, setIsMerging] = useState(false)
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -97,22 +102,27 @@ export function MergeFeature() {
         }
     }
 
-    const handleMerge = async () => {
-        if (files.length === 0) return
-
+    const handleMerge = async (saveToWorkspace = false) => {
+        if (files.length < 2) return
         setIsMerging(true)
         try {
             const mergedPdfBytes = await mergePDFs(files.map(f => f.file))
-            const blob = new Blob([mergedPdfBytes as any], { type: 'application/pdf' })
-            const url = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.download = 'merged.pdf'
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            URL.revokeObjectURL(url)
-            toast.success('PDFが正常に結合されました！')
+            // Save to workspace logic
+            if (saveToWorkspace) {
+                await saveFileToWorkspace(mergedPdfBytes, 'merged.pdf')
+                toast.success('ワークスペースに保存しました')
+            } else {
+                const blob = new Blob([mergedPdfBytes as any], { type: 'application/pdf' })
+                const url = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = 'merged.pdf'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                URL.revokeObjectURL(url)
+                toast.success('PDFが正常に結合されました！')
+            }
         } catch (error) {
             console.error(error)
             toast.error('PDFの結合に失敗しました')
@@ -130,7 +140,24 @@ export function MergeFeature() {
                 </p>
             </div>
 
-            <FileUpload onUpload={handleUpload} />
+            <div className="space-y-4">
+                <FileUpload onUpload={handleUpload} />
+                <div className="flex justify-center">
+                    <button
+                        onClick={() => setIsPickerOpen(true)}
+                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                        <HardDrive className="w-4 h-4" />
+                        ワークスペースから追加
+                    </button>
+                </div>
+            </div>
+
+            <WorkspaceFilePicker
+                isOpen={isPickerOpen}
+                onClose={() => setIsPickerOpen(false)}
+                onFileSelect={(file) => handleUpload([file])}
+            />
 
             {files.length > 0 && (
                 <div className="space-y-6">
@@ -168,9 +195,20 @@ export function MergeFeature() {
                         </SortableContext>
                     </DndContext>
 
-                    <div className="flex justify-end pt-4">
+                    <div className="flex justify-end gap-3 pt-4">
                         <button
-                            onClick={handleMerge}
+                            onClick={() => handleMerge(true)}
+                            disabled={isMerging || files.length < 2}
+                            className={cn(
+                                "flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all",
+                                isMerging || files.length < 2 ? "opacity-50 cursor-not-allowed" : ""
+                            )}
+                        >
+                            {isMerging ? <Loader2 className="w-5 h-5 animate-spin" /> : <HardDrive className="w-5 h-5" />}
+                            ワークスペースに保存
+                        </button>
+                        <button
+                            onClick={() => handleMerge(false)}
                             disabled={isMerging || files.length < 2}
                             className={cn(
                                 "flex items-center gap-2 px-8 py-3 rounded-lg font-medium text-white transition-all",
@@ -187,7 +225,7 @@ export function MergeFeature() {
                             ) : (
                                 <>
                                     <Download className="w-5 h-5" />
-                                    PDFを結合
+                                    ダウンロード
                                 </>
                             )}
                         </button>

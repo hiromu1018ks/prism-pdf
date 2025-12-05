@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { FileUpload } from "../ui/FileUpload"
 import { PDFDocument } from 'pdf-lib'
-import { Loader2, Minimize2, FileText } from 'lucide-react'
+import { Loader2, Minimize2, FileText, HardDrive, Download } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { toast } from 'sonner'
+import { WorkspaceFilePicker } from '../workspace/WorkspaceFilePicker'
+import { saveFileToWorkspace } from '../../lib/storage'
 
 export function CompressFeature() {
     const [file, setFile] = useState<File | null>(null)
     const [isCompressing, setIsCompressing] = useState(false)
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
     const [result, setResult] = useState<{ size: number; url: string } | null>(null)
 
     const handleUpload = (files: File[]) => {
@@ -16,7 +19,7 @@ export function CompressFeature() {
         setResult(null)
     }
 
-    const handleCompress = async () => {
+    const handleCompress = async (saveToWorkspace = false) => {
         if (!file) return
         setIsCompressing(true)
         try {
@@ -25,20 +28,25 @@ export function CompressFeature() {
 
             // pdf-lib automatically removes unused objects when saving
             // We can try to use object streams to compress
-            const pdfBytes = await pdfDoc.save({ useObjectStreams: true })
+            const compressedBytes = await pdfDoc.save({ useObjectStreams: true })
 
-            const blob = new Blob([pdfBytes as any], { type: 'application/pdf' })
-            const url = URL.createObjectURL(blob)
+            if (saveToWorkspace) {
+                await saveFileToWorkspace(compressedBytes, 'compressed.pdf')
+                toast.success('ワークスペースに保存しました')
+            } else {
+                const blob = new Blob([compressedBytes], { type: 'application/pdf' })
+                const url = URL.createObjectURL(blob)
 
-            setResult({
-                size: blob.size,
-                url
-            })
+                setResult({
+                    size: blob.size,
+                    url
+                })
 
-            toast.success('PDFが正常に最適化されました！')
+                toast.success('PDFが正常に圧縮されました！')
+            }
         } catch (error) {
             console.error(error)
-            toast.error('PDFの最適化に失敗しました')
+            toast.error('PDFの圧縮に失敗しました')
         } finally {
             setIsCompressing(false)
         }
@@ -53,12 +61,28 @@ export function CompressFeature() {
             <div className="text-center">
                 <h2 className="text-3xl font-bold tracking-tight">PDF圧縮</h2>
                 <p className="text-gray-500 dark:text-gray-400 mt-2">
-                    PDFを最適化してファイルサイズを削減します。
+                    PDFのファイルサイズを最適化して削減します。
                 </p>
             </div>
 
             {!file ? (
-                <FileUpload onUpload={handleUpload} />
+                <div className="space-y-4">
+                    <FileUpload onUpload={handleUpload} />
+                    <div className="flex justify-center">
+                        <button
+                            onClick={() => setIsPickerOpen(true)}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                            <HardDrive className="w-4 h-4" />
+                            ワークスペースから追加
+                        </button>
+                    </div>
+                    <WorkspaceFilePicker
+                        isOpen={isPickerOpen}
+                        onClose={() => setIsPickerOpen(false)}
+                        onFileSelect={(file) => handleUpload([file])}
+                    />
+                </div>
             ) : (
                 <div className="space-y-6">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -103,13 +127,25 @@ export function CompressFeature() {
                                     download={`optimized-${file.name}`}
                                     className="flex items-center justify-center gap-2 w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors shadow-sm"
                                 >
+                                    <Download className="w-4 h-4" />
                                     最適化されたPDFをダウンロード
                                 </a>
                             </div>
                         ) : (
-                            <div className="flex justify-center">
+                            <div className="flex justify-end gap-3">
                                 <button
-                                    onClick={handleCompress}
+                                    onClick={() => handleCompress(true)}
+                                    disabled={isCompressing}
+                                    className={cn(
+                                        "flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all",
+                                        isCompressing ? "opacity-50 cursor-not-allowed" : ""
+                                    )}
+                                >
+                                    {isCompressing ? <Loader2 className="w-5 h-5 animate-spin" /> : <HardDrive className="w-5 h-5" />}
+                                    ワークスペースに保存
+                                </button>
+                                <button
+                                    onClick={() => handleCompress(false)}
                                     disabled={isCompressing}
                                     className={cn(
                                         "flex items-center gap-2 px-8 py-3 rounded-lg font-medium text-white transition-all shadow-lg",

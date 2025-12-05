@@ -5,9 +5,11 @@ import { PDFDocument, degrees } from 'pdf-lib'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Loader2, Download, RotateCw, Trash2, Grip } from 'lucide-react'
+import { Loader2, RotateCw, Download, HardDrive, Grip, Trash2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { toast } from 'sonner'
+import { WorkspaceFilePicker } from '../workspace/WorkspaceFilePicker'
+import { saveFileToWorkspace } from '../../lib/storage'
 
 interface PageItem {
     id: string
@@ -85,6 +87,7 @@ export function ReorderFeature() {
     const [pages, setPages] = useState<PageItem[]>([])
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -145,7 +148,7 @@ export function ReorderFeature() {
         setPages(prev => prev.filter(page => page.id !== id))
     }
 
-    const handleSave = async () => {
+    const handleSave = async (saveToWorkspace = false) => {
         if (!file || pages.length === 0) return
         setIsSaving(true)
         try {
@@ -181,17 +184,21 @@ export function ReorderFeature() {
 
             const pdfBytes = await newPdf.save()
 
-            const blob = new Blob([pdfBytes as any], { type: 'application/pdf' })
-            const url = URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.download = 'organized.pdf'
-            document.body.appendChild(link)
-            link.click()
-            document.body.removeChild(link)
-            URL.revokeObjectURL(url)
-
-            toast.success('PDFが正常に保存されました！')
+            if (saveToWorkspace) {
+                await saveFileToWorkspace(pdfBytes, 'reordered.pdf')
+                toast.success('ワークスペースに保存しました')
+            } else {
+                const blob = new Blob([pdfBytes as any], { type: 'application/pdf' })
+                const url = URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = 'reordered.pdf'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+                URL.revokeObjectURL(url)
+                toast.success('PDFが正常に保存されました！')
+            }
         } catch (error) {
             console.error(error)
             toast.error('PDFの保存に失敗しました')
@@ -210,7 +217,23 @@ export function ReorderFeature() {
             </div>
 
             {!file ? (
-                <FileUpload onUpload={handleUpload} />
+                <div className="space-y-4">
+                    <FileUpload onUpload={handleUpload} />
+                    <div className="flex justify-center">
+                        <button
+                            onClick={() => setIsPickerOpen(true)}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                        >
+                            <HardDrive className="w-4 h-4" />
+                            ワークスペースから追加
+                        </button>
+                    </div>
+                    <WorkspaceFilePicker
+                        isOpen={isPickerOpen}
+                        onClose={() => setIsPickerOpen(false)}
+                        onFileSelect={(file) => handleUpload([file])}
+                    />
+                </div>
             ) : (
                 <div className="space-y-6">
                     <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
@@ -262,9 +285,20 @@ export function ReorderFeature() {
                         </DndContext>
                     )}
 
-                    <div className="flex justify-end pt-4 sticky bottom-4">
+                    <div className="flex justify-end gap-3 pt-4 sticky bottom-4">
                         <button
-                            onClick={handleSave}
+                            onClick={() => handleSave(true)}
+                            disabled={isSaving || pages.length === 0}
+                            className={cn(
+                                "flex items-center gap-2 px-6 py-3 rounded-lg font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all",
+                                isSaving || pages.length === 0 ? "opacity-50 cursor-not-allowed" : ""
+                            )}
+                        >
+                            {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <HardDrive className="w-5 h-5" />}
+                            ワークスペースに保存
+                        </button>
+                        <button
+                            onClick={() => handleSave(false)}
                             disabled={isSaving || pages.length === 0}
                             className={cn(
                                 "flex items-center gap-2 px-8 py-3 rounded-lg font-medium text-white transition-all shadow-lg",

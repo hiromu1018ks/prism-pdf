@@ -4,15 +4,17 @@ import { MergeFeature } from "./components/features/MergeFeature"
 import { SplitFeature } from "./components/features/SplitFeature"
 import { ReorderFeature } from "./components/features/ReorderFeature"
 import { CompressFeature } from "./components/features/CompressFeature"
+import { WorkspaceFeature } from "./components/features/WorkspaceFeature"
 import { cn } from "./lib/utils"
-import { Files, Scissors, Grid, Minimize2 } from "lucide-react"
+import { Files, Scissors, Grid, Minimize2, HardDrive } from "lucide-react"
 
-type Feature = "merge" | "split" | "reorder" | "compress"
+type Feature = "merge" | "split" | "reorder" | "compress" | "workspace"
 
 export default function App() {
   const [activeFeature, setActiveFeature] = useState<Feature | null>(null)
 
   const features = [
+    { id: "workspace", name: "ワークスペース", icon: HardDrive, component: WorkspaceFeature },
     { id: "merge", name: "結合", icon: Files, component: MergeFeature },
     { id: "split", name: "分割", icon: Scissors, component: SplitFeature },
     { id: "reorder", name: "並べ替え", icon: Grid, component: ReorderFeature },
